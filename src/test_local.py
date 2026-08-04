@@ -142,7 +142,10 @@ def main():
                 tag = "关键词命中(LLM判无关)" if llm_result else "关键词命中(LLM失败)"
 
             title = f"[测试] Tibo Codex Reset 信号 [{tag}]"
-            content = f"【测试推文，非真实事件】\n\n{t['summary']}"
+            # 与 main.py 保持一致：完整原文 + 时间
+            raw_text = t.get("summary", "") or t.get("title", "")
+            pub_time = t.get("published", "未知时间")
+            content = f"【测试推文，非真实事件】\n\n发布时间：{pub_time}\n\n推文原文：\n{raw_text}"
             if reason:
                 content += f"\n\nLLM 分析：{reason}"
             ok = feishu_push(feishu_webhook, title, content, t.get("link", ""))

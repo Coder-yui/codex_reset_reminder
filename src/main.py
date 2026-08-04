@@ -1,6 +1,8 @@
 """主流程：拉取 → 去重 → 分类 + 关键词兜底 → 推送 → 持久化"""
 import os
+import re
 import sys
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -24,6 +26,51 @@ def contains_reset(tweet: dict) -> bool:
     """
     text = f"{tweet.get('title', '')} {tweet.get('summary', '')}".lower()
     return "reset" in text
+
+
+def strip_html(html: str) -> str:
+    """清理 RSS summary 里的 HTML 标签，转为纯文本。
+
+    RSSHub 的 twitter 路由返回的 description 含 <br>、<hr>、<img> 等标签，
+    需要清理后才能在飞书文本消息里正常展示。
+    """
+    if not html:
+        return ""
+    # <br> / <br/> 转换行
+    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    # <hr> 转分隔线
+    text = re.sub(r"<hr[^>]*/?>", "\n---\n", text, flags=re.IGNORECASE)
+    # 去掉其他所有 HTML 标签
+    text = re.sub(r"<[^>]+>", "", text)
+    # HTML 实体解码（常见的一些）
+    entities = {
+        "&amp;": "&", "&lt;": "<", "&gt;": ">",
+        "&quot;": '"', "&#39;": "'", "&nbsp;": " ",
+    }
+    for entity, char in entities.items():
+        text = text.replace(entity, char)
+    # 压缩多余空行（保留有意义的换行）
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def format_time(pub_date: str) -> str:
+    """将 RSS 的 pubDate（RFC822 格式）转为易读的本地时间字符串。
+
+    输入示例：Tue, 04 Aug 2026 03:37:12 GMT
+    输出示例：2026-08-04 11:37 (北京时间)
+    若解析失败则原样返回。
+    """
+    if not pub_date:
+        return "未知时间"
+    try:
+        dt = parsedate_to_datetime(pub_date)
+        # 转为东八区时间
+        from datetime import timezone, timedelta
+        cst = dt.astimezone(timezone(timedelta(hours=8)))
+        return cst.strftime("%Y-%m-%d %H:%M") + " (北京时间)"
+    except Exception:
+        return pub_date
 
 
 def main():
@@ -101,7 +148,10 @@ def main():
                 tag = "关键词命中(LLM判无关)" if llm_result else "关键词命中(LLM失败)"
 
             title = f"Tibo Codex Reset 信号 [{tag}]"
-            content = t.get("summary", "") or t.get("title", "")
+            # 完整展示推文原文（清理 HTML 标签）+ 发布时间
+            raw_text = strip_html(t.get("summary", "") or t.get("title", ""))
+            pub_time = format_time(t.get("published", ""))
+            content = f"发布时间：{pub_time}\n\n推文原文：\n{raw_text}"
             if reason:
                 content += f"\n\nLLM 分析：{reason}"
 
