@@ -42,5 +42,5 @@ GitHub Actions (每 5 分钟)
 - **数据源**：[RSSHub](https://github.com/DIYgod/RSSHub) 自建实例（部署在 Render 免费档，海外节点免梯子）
 - **调度**：GitHub Actions（每 5 分钟 cron）
 - **语义分析**：DeepSeek-v4-flash API
-- **推送**：飞书自定义机器人 webhook + Server酱微信推送
+- **推送**：飞书自定义机器人 webhook（群内可见）+ Server酱微信推送（仅个人接收）
 - **去重持久化**：`sent_tweets.json` + git commit 回仓
