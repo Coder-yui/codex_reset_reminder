@@ -35,6 +35,17 @@ RSSHub 依赖你的 X cookie 拉取推文，cookie 会定期失效。
 如果 webhook 被误删或群解散，推送会失败但不报错（脚本只打印 FAIL）。
 重建：飞书群 → 设置 → 群机器人 → 添加自定义机器人 → 复制新 webhook → 更新 GitHub Secret `FEISHU_WEBHOOK_URL`。
 
+## Server酱微信推送失效
+
+如果微信推送失败，检查：
+1. SendKey 是否正确：GitHub Secret `SERVERCHAN_KEY`
+2. Server酱额度是否用完：https://sct.ftqq.com/user 查看今日剩余条数
+3. 微信公众号是否关注：需要关注"Server酱"公众号才能接收消息
+
+如果 SendKey 泄露或需要更换：
+1. 去 https://sct.ftqq.com 重新生成 SendKey
+2. 更新 GitHub Secret `SERVERCHAN_KEY`
+
 ## 本地测试
 
 ```bash
