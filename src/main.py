@@ -82,7 +82,7 @@ def main():
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     feishu_webhook = os.getenv("FEISHU_WEBHOOK_URL")
-    pushplus_token = os.getenv("PUSHPLUS_TOKEN")
+    serverchan_key = os.getenv("SERVERCHAN_KEY")
     threshold = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
 
     if not rsshub_url:
@@ -165,11 +165,11 @@ def main():
             else:
                 print(f"  [SKIP飞书，未配 webhook] {t['id']}: {tag}")
 
-            if pushplus_token:
-                wechat_ok = wechat_push(pushplus_token, title, content, t.get("link", ""))
+            if serverchan_key:
+                wechat_ok = wechat_push(serverchan_key, title, content, t.get("link", ""))
                 print(f"  微信推送 {t['id']}: {tag} -> {'OK' if wechat_ok else 'FAIL'}")
             else:
-                print(f"  [SKIP微信，未配 PUSHPLUS_TOKEN] {t['id']}: {tag}")
+                print(f"  [SKIP微信，未配 SERVERCHAN_KEY] {t['id']}: {tag}")
 
             if feishu_ok or wechat_ok:
                 pushed += 1

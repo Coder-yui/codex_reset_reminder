@@ -1,14 +1,14 @@
-"""微信推送（PushPlus）"""
+"""微信推送（Server酱）"""
 import requests
 
 
-def push(token: str, title: str, content: str, link: str = "",
+def push(sendkey: str, title: str, content: str, link: str = "",
          timeout: int = 10) -> bool:
     """
-    通过 PushPlus 向微信发送一条消息。
+    通过 Server酱 向微信发送一条消息。
 
     Args:
-        token: PushPlus 的 token（在 pushplus.plus 注册后获取）
+        sendkey: Server酱的 SendKey（在 sct.ftqq.com 注册后获取）
         title: 消息标题
         content: 消息正文（支持纯文本）
         link: 推文原文链接（附在正文末尾）
@@ -22,19 +22,17 @@ def push(token: str, title: str, content: str, link: str = "",
         text += f"\n\n原文链接：{link}"
 
     payload = {
-        "token": token,
         "title": title,
-        "content": text,
-        "template": "txt",
+        "desp": text,
     }
     try:
         resp = requests.post(
-            "http://www.pushplus.plus/send",
+            f"https://sctapi.ftqq.com/{sendkey}.send",
             json=payload,
             timeout=timeout,
         )
         data = resp.json()
-        # PushPlus 成功返回 {"code":200,...}
-        return data.get("code") == 200
+        # Server酱 成功返回 {"code":0,...}
+        return data.get("code") == 0
     except Exception:
         return False
