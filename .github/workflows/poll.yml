@@ -36,13 +36,24 @@ jobs:
         run: python src/main.py
 
       - name: Commit sent_tweets.json
+        # commit 失败不应影响整体运行结果（推送已在 Run poll 步完成）
+        # 并发运行时 push 可能被拒绝，用 rebase 重试；仍失败则跳过，下次运行会重新处理
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add src/sent_tweets.json
           if git diff --cached --quiet; then
             echo "无变更，跳过提交"
-          else
-            git commit -m "chore: update sent_tweets.json [skip ci]"
-            git push
+            exit 0
           fi
+          git commit -m "chore: update sent_tweets.json [skip ci]"
+          # rebase 远端最新再 push，解决并发冲突
+          git pull --rebase origin main || {
+            echo "rebase 失败，放弃本次提交，下次运行会重新处理"
+            exit 0
+          }
+          git push || {
+            echo "push 失败，放弃本次提交，下次运行会重新处理"
+            exit 0
+          }
