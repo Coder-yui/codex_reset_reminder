@@ -14,6 +14,7 @@ from rsshub_client import fetch_tweets
 from deduper import load_sent, save_sent, filter_new
 from classifier import classify
 from feishu_pusher import push as feishu_push
+from wechat_pusher import push as wechat_push
 
 
 SENT_FILE = Path(__file__).parent / "sent_tweets.json"
@@ -81,6 +82,7 @@ def main():
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     feishu_webhook = os.getenv("FEISHU_WEBHOOK_URL")
+    pushplus_token = os.getenv("PUSHPLUS_TOKEN")
     threshold = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
 
     if not rsshub_url:
@@ -155,13 +157,22 @@ def main():
             if reason:
                 content += f"\n\nLLM 分析：{reason}"
 
+            # 推送（飞书 + 微信，任一成功即计数）
+            feishu_ok = wechat_ok = False
             if feishu_webhook:
-                ok = feishu_push(feishu_webhook, title, content, t.get("link", ""))
-                print(f"  推送 {t['id']}: {tag} -> {'OK' if ok else 'FAIL'}")
-                if ok:
-                    pushed += 1
+                feishu_ok = feishu_push(feishu_webhook, title, content, t.get("link", ""))
+                print(f"  飞书推送 {t['id']}: {tag} -> {'OK' if feishu_ok else 'FAIL'}")
             else:
-                print(f"  [SKIP推送，未配 webhook] {t['id']}: {tag}")
+                print(f"  [SKIP飞书，未配 webhook] {t['id']}: {tag}")
+
+            if pushplus_token:
+                wechat_ok = wechat_push(pushplus_token, title, content, t.get("link", ""))
+                print(f"  微信推送 {t['id']}: {tag} -> {'OK' if wechat_ok else 'FAIL'}")
+            else:
+                print(f"  [SKIP微信，未配 PUSHPLUS_TOKEN] {t['id']}: {tag}")
+
+            if feishu_ok or wechat_ok:
+                pushed += 1
         else:
             conf_str = f"{conf:.2f}" if conf is not None else "N/A"
             print(f"  跳过 {t['id']}: cat={cat} conf={conf_str} ({reason or '无LLM分析'})")
