@@ -23,8 +23,8 @@ from classifier import classify
 from feishu_pusher import push as feishu_push
 
 
-# 5 条模拟推文，覆盖三种情况
-# 其中前 3 条参考了搜索到的 Tibo 真实表达风格
+# 6 条模拟推文，覆盖各种情况
+# mock-6 专门测试关键词兜底：含 reset 但语境无关额度，LLM 应判 cat=3，但关键词命中仍推送
 MOCK_TWEETS = [
     {
         "id": "mock-1-explicit-reset",
@@ -61,7 +61,20 @@ MOCK_TWEETS = [
         "link": "https://x.com/thsottiaux/status/mock5",
         "published": "2026-08-03T14:00:00Z",
     },
+    {
+        "id": "mock-6-keyword-only-reset-env",
+        "title": "Tibo",
+        "summary": "Just reset my local dev environment to test the new build pipeline. Nothing production-related, just cleaning up configs.",
+        "link": "https://x.com/thsottiaux/status/mock6",
+        "published": "2026-08-03T15:00:00Z",
+    },
 ]
+
+
+def contains_reset(tweet: dict) -> bool:
+    """硬性关键词检测，与 main.py 保持一致"""
+    text = f"{tweet.get('title', '')} {tweet.get('summary', '')}".lower()
+    return "reset" in text
 
 
 def main():
@@ -90,34 +103,61 @@ def main():
         print(f"--- [{i}/{len(MOCK_TWEETS)}] {t['id']} ---")
         print(f"推文: {t['summary'][:80]}...")
 
+        # LLM 分类（可能失败，但不影响关键词兜底）
+        llm_result = None
         try:
-            result = classify(t, api_key, model)
+            llm_result = classify(t, api_key, model)
         except Exception as e:
             print(f"  [ERROR] 分类失败: {e}")
-            continue
 
-        cat = result.get("category", 3)
-        conf = result.get("confidence", 0)
-        reason = result.get("reason", "")
-        cat_label = {1: "明确reset", 2: "暗示reset", 3: "无关"}[cat]
-        print(f"  分类: {cat} ({cat_label})  置信度: {conf:.2f}")
-        print(f"  原因: {reason}")
+        # 关键词硬检测
+        keyword_hit = contains_reset(t)
 
-        if cat in (1, 2) and conf >= threshold:
-            label = "明确宣布" if cat == 1 else "暗示即将"
-            title = f"[测试] Tibo {label} Codex 额度 Reset（置信度 {conf:.2f}）"
-            content = f"【测试推文，非真实事件】\n\n{t['summary']}\n\n分类原因：{reason}"
+        # LLM 判定
+        llm_push = False
+        cat = conf = reason = None
+        if llm_result:
+            cat = llm_result.get("category", 3)
+            conf = llm_result.get("confidence", 0)
+            reason = llm_result.get("reason", "")
+            cat_label = {1: "明确reset", 2: "暗示reset", 3: "无关"}[cat]
+            print(f"  分类: {cat} ({cat_label})  置信度: {conf:.2f}")
+            print(f"  原因: {reason}")
+        print(f"  关键词命中: {keyword_hit}")
+
+        # 推送条件：LLM 判定 OR 关键词命中
+        if llm_result and cat in (1, 2) and conf >= threshold:
+            llm_push = True
+
+        should_push = llm_push or keyword_hit
+
+        if should_push:
+            if llm_push and keyword_hit:
+                llm_label = "明确" if cat == 1 else "暗示"
+                tag = f"LLM:{llm_label}({conf:.2f}) + 关键词命中"
+            elif llm_push:
+                llm_label = "明确" if cat == 1 else "暗示"
+                tag = f"LLM:{llm_label}({conf:.2f})"
+            else:
+                tag = "关键词命中(LLM判无关)" if llm_result else "关键词命中(LLM失败)"
+
+            title = f"[测试] Tibo Codex Reset 信号 [{tag}]"
+            content = f"【测试推文，非真实事件】\n\n{t['summary']}"
+            if reason:
+                content += f"\n\nLLM 分析：{reason}"
             ok = feishu_push(feishu_webhook, title, content, t.get("link", ""))
-            print(f"  飞书推送: {'OK ✓' if ok else 'FAIL ✗'}")
+            print(f"  飞书推送: {'OK ✓' if ok else 'FAIL ✗'}  [{tag}]")
             if ok:
                 pushed += 1
         else:
-            print(f"  跳过推送（cat={cat} 或 conf<{threshold}）")
+            print(f"  跳过推送（LLM判无关 且 无关键词）")
         print()
 
     print(f"=== 测试完成 ===")
     print(f"共 {len(MOCK_TWEETS)} 条，推送 {pushed} 条到飞书")
-    print(f"预期：mock-1/2/3 应触发推送（cat=1 或 2），mock-4/5 不推送（cat=3）")
+    print(f"预期：mock-1/2/3/6 应触发推送（含reset关键词或LLM判定）")
+    print(f"      mock-4/5 不推送（无reset关键词且LLM判无关）")
+    print(f"      mock-6 是关键测试：LLM 应判无关，但关键词命中仍推送")
     print(f"请检查飞书群是否收到 {pushed} 条测试消息")
 
 

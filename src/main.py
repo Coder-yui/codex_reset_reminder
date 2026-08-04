@@ -1,4 +1,4 @@
-"""主流程：拉取 → 去重 → 分类 → 推送 → 持久化"""
+"""主流程：拉取 → 去重 → 分类 + 关键词兜底 → 推送 → 持久化"""
 import os
 import sys
 from pathlib import Path
@@ -15,6 +15,15 @@ from feishu_pusher import push as feishu_push
 
 
 SENT_FILE = Path(__file__).parent / "sent_tweets.json"
+
+
+def contains_reset(tweet: dict) -> bool:
+    """硬性关键词检测：推文标题或正文中是否出现 reset 字样（不区分大小写）。
+
+    作为 LLM 分类的兜底，确保任何含 reset 的推文都不会被遗漏。
+    """
+    text = f"{tweet.get('title', '')} {tweet.get('summary', '')}".lower()
+    return "reset" in text
 
 
 def main():
@@ -52,35 +61,60 @@ def main():
         print("[完成] 无新推文")
         return
 
-    # 3. 分类 + 推送
+    # 3. 分类 + 关键词兜底 + 推送
     print("[3/4] 分类并推送...")
     pushed = 0
     for t in new_tweets:
+        # LLM 分类（可能失败，但不影响关键词兜底）
+        llm_result = None
         try:
-            result = classify(t, deepseek_key, deepseek_model)
+            llm_result = classify(t, deepseek_key, deepseek_model)
         except Exception as e:
-            print(f"  [WARN] 分类失败 {t['id']}: {e}")
-            # 分类失败也算处理过，避免下次重复尝试同一条
-            sent_ids.add(t["id"])
-            continue
+            print(f"  [WARN] LLM 分类失败 {t['id']}: {e}")
 
-        cat = result.get("category", 3)
-        conf = result.get("confidence", 0)
-        reason = result.get("reason", "")
+        # 关键词硬检测（永不遗漏）
+        keyword_hit = contains_reset(t)
 
-        if cat in (1, 2) and conf >= threshold:
-            label = "明确宣布" if cat == 1 else "暗示即将"
-            title = f"Tibo {label} Codex 额度 Reset（置信度 {conf:.2f}）"
-            content = f"{t.get('title', '')}\n\n分类原因：{reason}"
+        # LLM 判定
+        llm_push = False
+        cat = conf = reason = None
+        if llm_result:
+            cat = llm_result.get("category", 3)
+            conf = llm_result.get("confidence", 0)
+            reason = llm_result.get("reason", "")
+            if cat in (1, 2) and conf >= threshold:
+                llm_push = True
+
+        # 推送条件：LLM 判定 OR 关键词命中
+        should_push = llm_push or keyword_hit
+
+        if should_push:
+            # 构造标签，标注是哪条线触发的推送
+            if llm_push and keyword_hit:
+                llm_label = "明确" if cat == 1 else "暗示"
+                tag = f"LLM:{llm_label}({conf:.2f}) + 关键词命中"
+            elif llm_push:
+                llm_label = "明确" if cat == 1 else "暗示"
+                tag = f"LLM:{llm_label}({conf:.2f})"
+            else:
+                # 关键词命中但 LLM 判无关（或 LLM 失败）
+                tag = "关键词命中(LLM判无关)" if llm_result else "关键词命中(LLM失败)"
+
+            title = f"Tibo Codex Reset 信号 [{tag}]"
+            content = t.get("summary", "") or t.get("title", "")
+            if reason:
+                content += f"\n\nLLM 分析：{reason}"
+
             if feishu_webhook:
                 ok = feishu_push(feishu_webhook, title, content, t.get("link", ""))
-                print(f"  推送 {t['id']}: cat={cat} conf={conf:.2f} -> {'OK' if ok else 'FAIL'}")
+                print(f"  推送 {t['id']}: {tag} -> {'OK' if ok else 'FAIL'}")
                 if ok:
                     pushed += 1
             else:
-                print(f"  [SKIP推送，未配 webhook] {t['id']}: cat={cat} conf={conf:.2f} ({reason})")
+                print(f"  [SKIP推送，未配 webhook] {t['id']}: {tag}")
         else:
-            print(f"  跳过 {t['id']}: cat={cat} conf={conf:.2f} ({reason})")
+            conf_str = f"{conf:.2f}" if conf is not None else "N/A"
+            print(f"  跳过 {t['id']}: cat={cat} conf={conf_str} ({reason or '无LLM分析'})")
 
         # 无论是否推送，都标记为已处理
         sent_ids.add(t["id"])
