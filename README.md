@@ -11,7 +11,7 @@ twscrape UserTweetsAndReplies
   → 飞书 + Server酱微信
 ```
 
-项目只使用一个 X 抓取方法，不包含 RSSHub、Nitter/XCancel、搜索接口、单条补发或 LLM 分类。
+项目只保留这一条抓取、判断和通知链路。
 
 ## 配置
 
