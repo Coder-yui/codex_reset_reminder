@@ -10,8 +10,7 @@ from dotenv import load_dotenv
 # 让 main.py 既能被 `python src/main.py` 跑，也能被 `python -m src.main` 跑
 sys.path.insert(0, str(Path(__file__).parent))
 
-from rsshub_client import fetch_tweets as fetch_from_rsshub
-from twitter_client import fetch_tweets as fetch_from_twitter
+from multi_source_client import fetch_tweets
 from deduper import load_sent, save_sent, filter_new
 from classifier import classify
 from feishu_pusher import push as feishu_push
@@ -85,26 +84,16 @@ def main():
     feishu_webhook = os.getenv("FEISHU_WEBHOOK_URL")
     serverchan_key = os.getenv("SERVERCHAN_KEY")
     threshold = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
-    # 优先用 X 官方 GraphQL（覆盖原创+引用+回复，不被 RSSHub 截断影响）
-    auth_token = os.getenv("TWITTER_AUTH_TOKEN")
-    ct0 = os.getenv("TWITTER_CT0")
+    # GitHub Actions 中未创建 Secret 时会注入空字符串，因此也要回退默认值。
+    xcancel_url = os.getenv("XCANCEL_URL") or "https://xcancel.com"
 
     if not deepseek_key:
-        print("[ERROR] DEEPSEEK_API_KEY 未配置")
-        return
+        print("[WARN] DEEPSEEK_API_KEY 未配置，将只使用 reset 关键词判断")
 
-    # 1. 拉取 RSS（优先 twitter_client，缺失 cookie 才 fallback RSSHub）
+    # 1. 并行读取两个独立来源，取帖子并集
     print(f"[1/4] 拉取 @{username} 的最近推文...")
     try:
-        if auth_token and ct0:
-            print("  使用 X GraphQL 直接拉取（含回复）")
-            tweets = fetch_from_twitter(auth_token, ct0, username)
-        else:
-            if not rsshub_url:
-                print("[ERROR] 未配 TWITTER_AUTH_TOKEN/CT0 且 RSSHUB_URL 未配置")
-                return
-            print("  [WARN] 未配 X cookie，fallback 到 RSSHub（已知会漏掉部分推文）")
-            tweets = fetch_from_rsshub(rsshub_url, username)
+        tweets = fetch_tweets(rsshub_url, xcancel_url, username)
     except Exception as e:
         print(f"[ERROR] 拉取失败: {e}")
         return
@@ -123,15 +112,14 @@ def main():
     print("[3/4] 分类并推送...")
     pushed = 0
     for t in new_tweets:
-        # LLM 分类（可能失败，但不影响关键词兜底）
-        llm_result = None
-        try:
-            llm_result = classify(t, deepseek_key, deepseek_model)
-        except Exception as e:
-            print(f"  [WARN] LLM 分类失败 {t['id']}: {e}")
-
-        # 关键词硬检测（永不遗漏）
+        # 关键词先判断；明确含 reset 时不等待、也不消耗 LLM 调用。
         keyword_hit = contains_reset(t)
+        llm_result = None
+        if not keyword_hit and deepseek_key:
+            try:
+                llm_result = classify(t, deepseek_key, deepseek_model)
+            except Exception as e:
+                print(f"  [WARN] LLM 分类失败 {t['id']}: {e}")
 
         # LLM 判定
         llm_push = False
@@ -156,7 +144,7 @@ def main():
                 tag = f"LLM:{llm_label}({conf:.2f})"
             else:
                 # 关键词命中但 LLM 判无关（或 LLM 失败）
-                tag = "关键词命中(LLM判无关)" if llm_result else "关键词命中(LLM失败)"
+                tag = "关键词命中"
 
             title = f"Tibo Codex Reset 信号 [{tag}]"
             # 完整展示推文原文（清理 HTML 标签）+ 发布时间

@@ -29,9 +29,8 @@ jobs:
         env:
           RSSHUB_URL: ${{ secrets.RSSHUB_URL }}
           TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
-          # X cookie：拉取 Tibo 时间线（含原创+引用+回复），解决 RSSHub 漏推问题
-          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
-          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+          # 默认 https://xcancel.com；如主站不可用，可在 Secret 中换兼容实例
+          XCANCEL_URL: ${{ secrets.XCANCEL_URL }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}

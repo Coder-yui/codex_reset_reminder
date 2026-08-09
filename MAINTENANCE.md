@@ -21,13 +21,15 @@ RSSHub 依赖你的 X cookie 拉取推文，cookie 会定期失效。
 | 现象 | 可能原因 | 处理 |
 |---|---|---|
 | `Commit sent_tweets.json` 步骤失败 | 并发触发冲突，已用 `continue-on-error` 兜底，不影响推送 | 可忽略 |
-| `Run poll` 步骤失败 | RSSHub 挂了 / DeepSeek 余额不足 / 飞书 webhook 失效 | 看日志定位 |
+| `Run poll` 步骤失败 | RSSHub 与 XCancel 同时失败 / 飞书 webhook 失效 | 看日志定位 |
 | 推送数一直为 0 | Tibo 最近没发 reset 相关推文，正常 | 等待 |
-| 拉取推文数为 0 | X cookie 过期 | 按上面步骤更新 |
+| 日志显示 `RSSHub 失败` | RSSHub 服务或 X cookie 异常 | 按上面步骤更新；XCancel 成功时任务仍可继续 |
+| 日志显示 `XCancel 失败` | 镜像临时不可用或页面结构变化 | RSSHub 成功时任务仍可继续；持续失败再更换 `XCANCEL_URL` |
 
 ## DeepSeek 余额
 
-每次分类调用约 ¥0.001，月成本通常 < ¥1。
+DeepSeek 是可选项。不配置 `DEEPSEEK_API_KEY` 时，任务会只用 `reset` 关键词免费运行。
+如启用语义分类，每次分类调用约 ¥0.001，月成本通常 < ¥1。
 查看余额：https://platform.deepseek.com/usage
 
 ## 飞书机器人 webhook 失效
