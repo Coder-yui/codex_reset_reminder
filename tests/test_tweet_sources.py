@@ -3,11 +3,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from multi_source_client import fetch_tweets, merge_tweets
-from twitter_search_client import parse_search
+from twitter_search_client import FALLBACK_QUERY_ID, fetch_tweets as fetch_search, parse_search
 from xcancel_client import parse_profile
 from rsshub_client import fetch_tweet_detail
 
@@ -148,6 +149,19 @@ class TwitterSearchParserTests(unittest.TestCase):
         self.assertEqual(len(tweets), 1)
         self.assertIn("2086188036493344823", tweets[0]["id"])
         self.assertIn("reset usage limits", tweets[0]["summary"])
+
+    @patch("twitter_search_client._operation_config", return_value=("stale-id", {}))
+    @patch("twitter_search_client.requests.get")
+    def test_tries_fallback_id_when_document_id_fails(self, get, _config):
+        get.return_value.raise_for_status.side_effect = requests.HTTPError("404")
+
+        with self.assertRaisesRegex(RuntimeError, "X Latest Search 拉取失败"):
+            fetch_search("token", "csrf", "thsottiaux", retries=0)
+
+        requested_urls = [call.args[0] for call in get.call_args_list]
+        self.assertEqual(len(requested_urls), 2)
+        self.assertIn("/stale-id/SearchTimeline", requested_urls[0])
+        self.assertIn(f"/{FALLBACK_QUERY_ID}/SearchTimeline", requested_urls[1])
 
 
 class RSSHubDetailTests(unittest.TestCase):

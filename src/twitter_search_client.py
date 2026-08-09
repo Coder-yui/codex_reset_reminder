@@ -17,7 +17,7 @@ API_DOC_URL = (
     "https://cdn.jsdelivr.net/gh/fa0311/TwitterInternalAPIDocument"
     "@master/docs/json/API.json"
 )
-FALLBACK_QUERY_ID = "PusO6nN_nUSAsfJktZJd9w"
+FALLBACK_QUERY_ID = "BGd0T_j7oVwlW5U79tO_0A"
 FALLBACK_FEATURES = {
     "rweb_video_screen_enabled": False,
     "rweb_cashtags_enabled": True,
@@ -131,7 +131,6 @@ def fetch_tweets(
     if not auth_token or not ct0:
         raise ValueError("TWITTER_AUTH_TOKEN/TWITTER_CT0 未配置")
     query_id, features = _operation_config(timeout)
-    url = f"https://x.com/i/api/graphql/{query_id}/SearchTimeline"
     headers = {
         "accept": "*/*",
         "authorization": f"Bearer {BEARER_TOKEN}",
@@ -156,19 +155,23 @@ def fetch_tweets(
         "features": json.dumps(features, separators=(",", ":")),
     }
     last_error: Optional[Exception] = None
-    for attempt in range(retries + 1):
-        try:
-            response = requests.get(
-                url,
-                headers=headers,
-                cookies={"auth_token": auth_token, "ct0": ct0},
-                params=params,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            return parse_search(response.json(), username)
-        except Exception as error:
-            last_error = error
-            if attempt < retries:
-                time.sleep(retry_delay)
+    # 外部 API 文档可能晚于 X 前端更新；文档 ID 失败后再尝试内置已知 ID。
+    query_ids = list(dict.fromkeys((query_id, FALLBACK_QUERY_ID)))
+    for candidate_id in query_ids:
+        url = f"https://x.com/i/api/graphql/{candidate_id}/SearchTimeline"
+        for attempt in range(retries + 1):
+            try:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    cookies={"auth_token": auth_token, "ct0": ct0},
+                    params=params,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                return parse_search(response.json(), username)
+            except Exception as error:
+                last_error = error
+                if attempt < retries:
+                    time.sleep(retry_delay)
     raise RuntimeError(f"X Latest Search 拉取失败: {last_error}") from last_error
