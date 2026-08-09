@@ -21,9 +21,7 @@ def save_sent(path: str, sent_ids: Set[str], max_keep: int = 1000) -> None:
     持久化已处理 id 集合。
 
     Args:
-        max_keep: 最多保留多少条 id，超过则只保留最新的 max_keep 条，
-                  防止文件无限增长。RSSHub 一次返回的条数有限，
-                  1000 足够覆盖长期运行。
+        max_keep: 最多保留多少条 id，防止文件无限增长。
     """
     ids_list = list(sent_ids)
     if len(ids_list) > max_keep:

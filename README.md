@@ -1,52 +1,38 @@
 # Codex Reset Reminder
 
-监控 [OpenAI Codex](https://openai.com/index/codex/) 工程师 Tibo（[@thsottiaux](https://x.com/thsottiaux)）的 X 推文，当他宣布重置 Codex 使用额度时，第一时间通过飞书机器人和微信推送提醒。
+每 5 分钟读取 Tibo（[@thsottiaux](https://x.com/thsottiaux)）的 X 时间线。新帖子正文包含 `reset` 时，推送到飞书和微信。
 
-## 工作流程
+## 流程
 
-```
-GitHub Actions (每 5 分钟)
-    → 并行读取 RSSHub + XCancel，按帖子 ID 取并集
-    → 去重（对比 sent_tweets.json）
-    → "reset" 关键词立即判定；未命中时再做 DeepSeek 语义分类
-    → 命中即推送飞书 + 微信
-    → 更新 sent_tweets.json 并 commit 回仓
+```text
+twscrape UserTweetsAndReplies
+  → sent_tweets.json 去重
+  → reset 关键词匹配
+  → 飞书 + Server酱微信
 ```
 
-## 推送判定逻辑
+项目只使用一个 X 抓取方法，不包含 RSSHub、Nitter/XCancel、搜索接口、单条补发或 LLM 分类。
 
-双保险机制，任一命中即推送：
+## 配置
 
-- **关键词快速通道**：推文文本中出现 "reset" 就立即推送，不等待也不调用 LLM
-- **LLM 语义分析**：未出现关键词时，DeepSeek-v4-flash 判断是否用其他表达宣布或暗示 reset；未配置 API Key 时自动退化为免费关键词模式
+在 GitHub Actions Secrets 中配置：
 
-## 项目结构
+- `TWITTER_AUTH_TOKEN`：登录 X 后的 `auth_token` Cookie
+- `TWITTER_CT0`：登录 X 后的 `ct0` Cookie
+- `FEISHU_WEBHOOK_URL`：飞书自定义机器人 Webhook
+- `SERVERCHAN_KEY`：Server酱 SendKey
+- `TWITTER_USERNAME`：可选，默认 `thsottiaux`
+- `TWITTER_USER_ID`：可选，默认 Tibo 的用户 ID
 
-```
-├── .github/workflows/poll.yml   # GitHub Actions 定时任务
-├── src/
-│   ├── main.py                  # 主流程
-│   ├── rsshub_client.py         # RSSHub RSS 拉取
-│   ├── xcancel_client.py        # XCancel 公开主页解析
-│   ├── multi_source_client.py   # 多源并行读取、容错和合并
-│   ├── deduper.py               # 去重持久化
-│   ├── classifier.py            # DeepSeek 分类
-│   ├── feishu_pusher.py         # 飞书推送
-│   ├── wechat_pusher.py         # 微信推送（Server酱）
-│   └── test_local.py            # 本地测试脚本
-├── render.yaml                  # Render 部署配置
-├── requirements.txt
-└── .env.example                 # 环境变量模板
+推送到 `main` 后会立即执行一次，之后 GitHub Actions 每 5 分钟运行。
+
+## 本地运行
+
+```bash
+cp .env.example .env
+python -m venv venv
+venv/bin/pip install -r requirements.txt
+venv/bin/python src/main.py
 ```
 
-## 技术栈
-
-- **数据源**：RSSHub 用户时间线 + [XCancel](https://xcancel.com) 公开主页；任一成功即可继续
-- **调度**：GitHub Actions（每 5 分钟 cron）
-- **语义分析**：DeepSeek-v4-flash API
-- **推送**：飞书自定义机器人 webhook（群内可见）+ Server酱微信推送（仅个人接收）
-- **去重持久化**：`sent_tweets.json` + git commit 回仓
-
-## 数据源容错
-
-两个来源会并行请求并按数字 ID 取并集，重复帖子只处理一次。XCancel 在公共网页可访问时提供独立兜底；全部来源同时失败时任务才会以拉取失败结束。对于已知被用户时间线路由漏掉的帖子，可以通过 `RECOVERY_TWEET_IDS` 走 RSSHub 单条详情路由补发，成功后仍由去重文件保证只通知一次。
+X Cookie 失效后，从浏览器重新复制 `auth_token` 和 `ct0` 并更新 Secrets。
