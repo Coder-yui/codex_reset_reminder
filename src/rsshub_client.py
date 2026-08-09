@@ -5,6 +5,17 @@ import feedparser
 from typing import List, Dict
 
 
+def _entry_to_tweet(entry) -> Dict:
+    """把 feedparser entry 统一转换为项目内部的推文结构。"""
+    return {
+        "id": entry.get("id") or entry.get("guid") or entry.get("link", ""),
+        "title": entry.get("title", ""),
+        "link": entry.get("link", ""),
+        "summary": entry.get("summary", ""),
+        "published": entry.get("published", ""),
+    }
+
+
 def fetch_tweets(rsshub_url: str, username: str, timeout: int = 60,
                  retries: int = 2, retry_delay: int = 5) -> List[Dict]:
     """
@@ -30,17 +41,7 @@ def fetch_tweets(rsshub_url: str, username: str, timeout: int = 60,
             resp.raise_for_status()
 
             feed = feedparser.parse(resp.text)
-            tweets: List[Dict] = []
-            for entry in feed.entries:
-                # RSSHub 的 twitter/user 路由一般会带 guid/link，作为去重 id
-                tweet_id = entry.get("id") or entry.get("guid") or entry.get("link", "")
-                tweets.append({
-                    "id": tweet_id,
-                    "title": entry.get("title", ""),
-                    "link": entry.get("link", ""),
-                    "summary": entry.get("summary", ""),
-                    "published": entry.get("published", ""),
-                })
+            tweets: List[Dict] = [_entry_to_tweet(entry) for entry in feed.entries]
             return tweets
         except requests.RequestException as e:
             last_err = e
@@ -50,3 +51,22 @@ def fetch_tweets(rsshub_url: str, username: str, timeout: int = 60,
             else:
                 print(f"  [WARN] 拉取失败（第{attempt + 1}次，已达重试上限）: {e}")
     raise last_err
+
+
+def fetch_tweet_detail(rsshub_url: str, username: str, tweet_id: str,
+                       timeout: int = 60) -> Dict:
+    """通过 RSSHub 单条推文路由补取一条已知但被用户时间线漏掉的推文。"""
+    url = (
+        f"{rsshub_url.rstrip('/')}/twitter/tweet/"
+        f"{username}/status/{tweet_id}"
+    )
+    resp = requests.get(url, timeout=timeout)
+    resp.raise_for_status()
+    feed = feedparser.parse(resp.text)
+
+    for entry in feed.entries:
+        tweet = _entry_to_tweet(entry)
+        if str(tweet_id) in f"{tweet['id']} {tweet['link']}":
+            return tweet
+
+    raise ValueError(f"RSSHub 单条推文结果中未找到 {tweet_id}")

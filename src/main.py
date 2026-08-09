@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent))
 
 from multi_source_client import fetch_tweets
+from rsshub_client import fetch_tweet_detail
 from deduper import load_sent, save_sent, filter_new
 from classifier import classify
 from feishu_pusher import push as feishu_push
@@ -88,6 +89,11 @@ def main():
     xcancel_url = os.getenv("XCANCEL_URL") or "https://xcancel.com"
     auth_token = os.getenv("TWITTER_AUTH_TOKEN", "")
     ct0 = os.getenv("TWITTER_CT0", "")
+    recovery_tweet_ids = [
+        value.strip()
+        for value in os.getenv("RECOVERY_TWEET_IDS", "").split(",")
+        if value.strip()
+    ]
 
     if not deepseek_key:
         print("[WARN] DEEPSEEK_API_KEY 未配置，将只使用 reset 关键词判断")
@@ -99,6 +105,15 @@ def main():
     except Exception as e:
         print(f"[ERROR] 拉取失败: {e}")
         return
+    # 已知被用户时间线漏掉的帖子走单条详情路由补取。去重文件会保证只推一次。
+    for tweet_id in recovery_tweet_ids:
+        try:
+            recovery_tweet = fetch_tweet_detail(rsshub_url, username, tweet_id)
+            if all(tweet_id not in f"{t.get('id', '')} {t.get('link', '')}" for t in tweets):
+                tweets.append(recovery_tweet)
+                print(f"  Recovery: 补取到 {tweet_id}")
+        except Exception as e:
+            print(f"  [WARN] Recovery 补取 {tweet_id} 失败: {e}")
     print(f"  共拉到 {len(tweets)} 条")
 
     # 2. 去重
@@ -176,8 +191,11 @@ def main():
             conf_str = f"{conf:.2f}" if conf is not None else "N/A"
             print(f"  跳过 {t['id']}: cat={cat} conf={conf_str} ({reason or '无LLM分析'})")
 
-        # 无论是否推送，都标记为已处理
-        sent_ids.add(t["id"])
+        # 需要推送的帖子只有至少一个渠道成功后才标记，避免通知失败却永久丢失。
+        if not should_push or feishu_ok or wechat_ok:
+            sent_ids.add(t["id"])
+        else:
+            print(f"  [WARN] {t['id']} 所有通知渠道均失败，下次将重试")
 
     # 4. 持久化
     print("[4/4] 保存已处理记录...")

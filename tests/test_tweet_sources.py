@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from multi_source_client import fetch_tweets, merge_tweets
 from twitter_search_client import parse_search
 from xcancel_client import parse_profile
+from rsshub_client import fetch_tweet_detail
 
 
 PROFILE_HTML = """
@@ -147,6 +148,28 @@ class TwitterSearchParserTests(unittest.TestCase):
         self.assertEqual(len(tweets), 1)
         self.assertIn("2086188036493344823", tweets[0]["id"])
         self.assertIn("reset usage limits", tweets[0]["summary"])
+
+
+class RSSHubDetailTests(unittest.TestCase):
+    @patch("rsshub_client.requests.get")
+    def test_selects_requested_tweet_from_detail_feed(self, get):
+        get.return_value.text = """<?xml version="1.0"?>
+        <rss version="2.0"><channel>
+          <item><guid>https://twitter.com/other/status/1</guid><link>https://twitter.com/other/status/1</link><description>reply</description></item>
+          <item><guid>https://twitter.com/thsottiaux/status/2086188036493344823</guid><link>https://x.com/thsottiaux/status/2086188036493344823</link><description>reset usage limits</description></item>
+        </channel></rss>"""
+        get.return_value.raise_for_status.return_value = None
+
+        tweet = fetch_tweet_detail(
+            "https://rsshub.example", "thsottiaux", "2086188036493344823"
+        )
+
+        self.assertIn("2086188036493344823", tweet["id"])
+        self.assertIn("reset usage limits", tweet["summary"])
+        get.assert_called_once_with(
+            "https://rsshub.example/twitter/tweet/thsottiaux/status/2086188036493344823",
+            timeout=60,
+        )
 
 
 if __name__ == "__main__":
