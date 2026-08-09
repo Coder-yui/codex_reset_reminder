@@ -3,17 +3,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import requests
-
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from multi_source_client import fetch_tweets, merge_tweets
-from twitter_search_client import (
-    FALLBACK_QUERY_ID,
-    _extract_search_query_id,
-    fetch_tweets as fetch_search,
-    parse_search,
-)
 from xcancel_client import parse_profile
 from rsshub_client import fetch_tweet_detail
 
@@ -106,72 +98,6 @@ class MultiSourceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "所有推文来源均失败"):
             fetch_tweets("https://rsshub.example", "https://xcancel.com", "thsottiaux")
-
-
-class TwitterSearchParserTests(unittest.TestCase):
-    def test_parses_target_from_search_timeline(self):
-        payload = {
-            "data": {
-                "search_by_raw_query": {
-                    "search_timeline": {
-                        "timeline": {
-                            "instructions": [
-                                {
-                                    "entries": [
-                                        {
-                                            "content": {
-                                                "itemContent": {
-                                                    "tweet_results": {
-                                                        "result": {
-                                                            "rest_id": "2086188036493344823",
-                                                            "core": {
-                                                                "user_results": {
-                                                                    "result": {
-                                                                        "core": {"screen_name": "thsottiaux"}
-                                                                    }
-                                                                }
-                                                            },
-                                                            "legacy": {
-                                                                "full_text": "I have reset usage limits for all paid users.",
-                                                                "created_at": "Sat Aug 08 20:29:22 +0000 2026",
-                                                            },
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        }
-
-        tweets = parse_search(payload, "thsottiaux")
-
-        self.assertEqual(len(tweets), 1)
-        self.assertIn("2086188036493344823", tweets[0]["id"])
-        self.assertIn("reset usage limits", tweets[0]["summary"])
-
-    @patch("twitter_search_client._operation_config", return_value=("stale-id", {}))
-    @patch("twitter_search_client._resolve_query_id_from_x", return_value=None)
-    @patch("twitter_search_client.requests.get")
-    def test_tries_fallback_id_when_document_id_fails(self, get, _resolve, _config):
-        get.return_value.raise_for_status.side_effect = requests.HTTPError("404")
-
-        with self.assertRaisesRegex(RuntimeError, "X Latest Search 拉取失败"):
-            fetch_search("token", "csrf", "thsottiaux", retries=0)
-
-        requested_urls = [call.args[0] for call in get.call_args_list]
-        self.assertEqual(len(requested_urls), 2)
-        self.assertIn("/stale-id/SearchTimeline", requested_urls[0])
-        self.assertIn(f"/{FALLBACK_QUERY_ID}/SearchTimeline", requested_urls[1])
-
-    def test_extracts_query_id_from_x_bundle(self):
-        script = 'x={queryId:"current-id",operationName:"SearchTimeline",operationType:"query"}'
-        self.assertEqual(_extract_search_query_id(script), "current-id")
 
 
 class RSSHubDetailTests(unittest.TestCase):

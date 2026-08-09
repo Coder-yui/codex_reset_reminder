@@ -87,8 +87,6 @@ def main():
     threshold = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
     # GitHub Actions 中未创建 Secret 时会注入空字符串，因此也要回退默认值。
     xcancel_url = os.getenv("XCANCEL_URL") or "https://xcancel.com"
-    auth_token = os.getenv("TWITTER_AUTH_TOKEN", "")
-    ct0 = os.getenv("TWITTER_CT0", "")
     recovery_tweet_ids = [
         value.strip()
         for value in os.getenv("RECOVERY_TWEET_IDS", "").split(",")
@@ -101,7 +99,7 @@ def main():
     # 1. 并行读取两个独立来源，取帖子并集
     print(f"[1/4] 拉取 @{username} 的最近推文...")
     try:
-        tweets = fetch_tweets(rsshub_url, xcancel_url, username, auth_token, ct0)
+        tweets = fetch_tweets(rsshub_url, xcancel_url, username)
     except Exception as e:
         print(f"[ERROR] 拉取失败: {e}")
         return

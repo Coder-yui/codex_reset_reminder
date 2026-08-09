@@ -35,9 +35,6 @@ jobs:
           TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
           # 默认 https://xcancel.com；如主站不可用，可在 Secret 中换兼容实例
           XCANCEL_URL: ${{ secrets.XCANCEL_URL }}
-          # 独立的 Latest Search 时间线，补 UserTweets 选择性漏帖
-          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
-          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
           # 用户时间线路由漏掉的历史帖：单条补取，成功后由 sent_tweets 去重。
           RECOVERY_TWEET_IDS: '2086188036493344823'
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
