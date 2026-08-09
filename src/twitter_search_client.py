@@ -1,10 +1,12 @@
 """使用登录 Cookie 调用 X 的 Latest Search 时间线作为免费补源。"""
 
 import json
+import re
 import time
 from datetime import datetime
 from email.utils import format_datetime
 from typing import Dict, Iterator, List, Optional
+from urllib.parse import urljoin
 
 import requests
 
@@ -119,6 +121,47 @@ def _operation_config(timeout: int) -> tuple[str, dict]:
         return FALLBACK_QUERY_ID, FALLBACK_FEATURES
 
 
+def _extract_search_query_id(script: str) -> Optional[str]:
+    """从 X 的前端 bundle 中提取 SearchTimeline 的当前 operation ID。"""
+    patterns = (
+        r'queryId:\s*["\']([^"\']+)["\']\s*,\s*operationName:\s*["\']SearchTimeline["\']',
+        r'operationName:\s*["\']SearchTimeline["\']\s*,\s*queryId:\s*["\']([^"\']+)["\']',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, script)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _resolve_query_id_from_x(
+    auth_token: str, ct0: str, username: str, timeout: int
+) -> Optional[str]:
+    """固定 ID 失效时，从登录后的 X 搜索页 bundle 动态解析当前 ID。"""
+    page_url = f"https://x.com/search?q=from%3A{username}&src=typed_query&f=live"
+    cookies = {"auth_token": auth_token, "ct0": ct0}
+    headers = {
+        "accept": "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/139.0 Safari/537.36",
+    }
+    page = requests.get(page_url, headers=headers, cookies=cookies, timeout=timeout)
+    page.raise_for_status()
+    script_urls = [
+        urljoin(page_url, src)
+        for src in re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', page.text)
+    ]
+    # Search 专用 chunk 最可能包含 operation；main 是常见兜底。限制数量避免过量请求。
+    preferred = [url for url in script_urls if "Search" in url or "/main." in url]
+    remaining = [url for url in script_urls if url not in preferred]
+    for script_url in (preferred + remaining)[:30]:
+        response = requests.get(script_url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        query_id = _extract_search_query_id(response.text)
+        if query_id:
+            return query_id
+    return None
+
+
 def fetch_tweets(
     auth_token: str,
     ct0: str,
@@ -155,9 +198,11 @@ def fetch_tweets(
         "features": json.dumps(features, separators=(",", ":")),
     }
     last_error: Optional[Exception] = None
-    # 外部 API 文档可能晚于 X 前端更新；文档 ID 失败后再尝试内置已知 ID。
+    # 外部 API 文档可能晚于 X 前端更新；依次尝试文档值、内置值和网页实时值。
     query_ids = list(dict.fromkeys((query_id, FALLBACK_QUERY_ID)))
-    for candidate_id in query_ids:
+
+    def try_query(candidate_id: str) -> Optional[List[Dict]]:
+        nonlocal last_error
         url = f"https://x.com/i/api/graphql/{candidate_id}/SearchTimeline"
         for attempt in range(retries + 1):
             try:
@@ -174,4 +219,19 @@ def fetch_tweets(
                 last_error = error
                 if attempt < retries:
                     time.sleep(retry_delay)
+        return None
+
+    for candidate_id in query_ids:
+        result = try_query(candidate_id)
+        if result is not None:
+            return result
+
+    try:
+        live_query_id = _resolve_query_id_from_x(auth_token, ct0, username, timeout)
+        if live_query_id and live_query_id not in query_ids:
+            result = try_query(live_query_id)
+            if result is not None:
+                return result
+    except Exception as error:
+        last_error = error
     raise RuntimeError(f"X Latest Search 拉取失败: {last_error}") from last_error
