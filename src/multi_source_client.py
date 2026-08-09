@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Tuple
 
 from rsshub_client import fetch_tweets as fetch_from_rsshub
+from twitter_search_client import fetch_tweets as fetch_from_twitter_search
 from xcancel_client import fetch_tweets as fetch_from_xcancel
 
 
@@ -39,17 +40,25 @@ def merge_tweets(groups: Iterable[List[Dict]]) -> List[Dict]:
     return sorted(merged.values(), key=sort_key, reverse=True)
 
 
-def fetch_tweets(rsshub_url: str, xcancel_url: str, username: str) -> List[Dict]:
+def fetch_tweets(
+    rsshub_url: str,
+    xcancel_url: str,
+    username: str,
+    auth_token: str = "",
+    ct0: str = "",
+) -> List[Dict]:
     """并行读取已配置的数据源；任一成功即可，全部失败才报错。"""
     jobs = {}
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         if rsshub_url:
             jobs[executor.submit(fetch_from_rsshub, rsshub_url, username)] = "RSSHub"
         if xcancel_url:
             jobs[executor.submit(fetch_from_xcancel, xcancel_url, username)] = "XCancel"
+        if auth_token and ct0:
+            jobs[executor.submit(fetch_from_twitter_search, auth_token, ct0, username)] = "X Latest Search"
 
         if not jobs:
-            raise ValueError("RSSHUB_URL 和 XCANCEL_URL 至少需要配置一个")
+            raise ValueError("至少需要配置一个推文来源")
 
         successful_groups: List[List[Dict]] = []
         errors = []

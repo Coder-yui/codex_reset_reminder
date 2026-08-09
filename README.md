@@ -6,7 +6,7 @@
 
 ```
 GitHub Actions (每 5 分钟)
-    → 并行读取 RSSHub + XCancel 公开主页，按帖子 ID 取并集
+    → 并行读取 RSSHub + X Latest Search + XCancel，按帖子 ID 取并集
     → 去重（对比 sent_tweets.json）
     → "reset" 关键词立即判定；未命中时再做 DeepSeek 语义分类
     → 命中即推送飞书 + 微信
@@ -28,7 +28,8 @@ GitHub Actions (每 5 分钟)
 │   ├── main.py                  # 主流程
 │   ├── rsshub_client.py         # RSSHub RSS 拉取
 │   ├── xcancel_client.py        # XCancel 公开主页解析
-│   ├── multi_source_client.py   # 双源并行读取、容错和合并
+│   ├── twitter_search_client.py # X Latest Search 补源
+│   ├── multi_source_client.py   # 多源并行读取、容错和合并
 │   ├── deduper.py               # 去重持久化
 │   ├── classifier.py            # DeepSeek 分类
 │   ├── feishu_pusher.py         # 飞书推送
@@ -41,7 +42,7 @@ GitHub Actions (每 5 分钟)
 
 ## 技术栈
 
-- **数据源**：[RSSHub](https://github.com/DIYgod/RSSHub) 自建实例 + [XCancel](https://xcancel.com) 公开主页；任一成功即可继续
+- **数据源**：RSSHub 用户时间线 + X Latest Search + [XCancel](https://xcancel.com) 公开主页；任一成功即可继续
 - **调度**：GitHub Actions（每 5 分钟 cron）
 - **语义分析**：DeepSeek-v4-flash API
 - **推送**：飞书自定义机器人 webhook（群内可见）+ Server酱微信推送（仅个人接收）
@@ -49,4 +50,4 @@ GitHub Actions (每 5 分钟)
 
 ## 数据源容错
 
-RSSHub 和 XCancel 会并行请求。两边的帖子按数字 ID 取并集，重复帖子只处理一次；某一个来源超时或页面异常时，另一个来源仍会继续工作。只有两个来源同时失败，任务才会以拉取失败结束。
+三个来源会并行请求并按数字 ID 取并集，重复帖子只处理一次。RSSHub 的用户时间线漏帖时，Latest Search 可以用不同的 X 时间线操作补回；XCancel 在公共网页可访问时提供第三重兜底。全部来源同时失败时任务才会以拉取失败结束。

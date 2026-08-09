@@ -7,6 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from multi_source_client import fetch_tweets, merge_tweets
+from twitter_search_client import parse_search
 from xcancel_client import parse_profile
 
 
@@ -98,6 +99,54 @@ class MultiSourceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "所有推文来源均失败"):
             fetch_tweets("https://rsshub.example", "https://xcancel.com", "thsottiaux")
+
+
+class TwitterSearchParserTests(unittest.TestCase):
+    def test_parses_target_from_search_timeline(self):
+        payload = {
+            "data": {
+                "search_by_raw_query": {
+                    "search_timeline": {
+                        "timeline": {
+                            "instructions": [
+                                {
+                                    "entries": [
+                                        {
+                                            "content": {
+                                                "itemContent": {
+                                                    "tweet_results": {
+                                                        "result": {
+                                                            "rest_id": "2086188036493344823",
+                                                            "core": {
+                                                                "user_results": {
+                                                                    "result": {
+                                                                        "core": {"screen_name": "thsottiaux"}
+                                                                    }
+                                                                }
+                                                            },
+                                                            "legacy": {
+                                                                "full_text": "I have reset usage limits for all paid users.",
+                                                                "created_at": "Sat Aug 08 20:29:22 +0000 2026",
+                                                            },
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+
+        tweets = parse_search(payload, "thsottiaux")
+
+        self.assertEqual(len(tweets), 1)
+        self.assertIn("2086188036493344823", tweets[0]["id"])
+        self.assertIn("reset usage limits", tweets[0]["summary"])
 
 
 if __name__ == "__main__":
