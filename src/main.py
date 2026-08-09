@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 # 让 main.py 既能被 `python src/main.py` 跑，也能被 `python -m src.main` 跑
 sys.path.insert(0, str(Path(__file__).parent))
 
-from rsshub_client import fetch_tweets
+from rsshub_client import fetch_tweets as fetch_from_rsshub
+from twitter_client import fetch_tweets as fetch_from_twitter
 from deduper import load_sent, save_sent, filter_new
 from classifier import classify
 from feishu_pusher import push as feishu_push
@@ -84,18 +85,26 @@ def main():
     feishu_webhook = os.getenv("FEISHU_WEBHOOK_URL")
     serverchan_key = os.getenv("SERVERCHAN_KEY")
     threshold = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
+    # 优先用 X 官方 GraphQL（覆盖原创+引用+回复，不被 RSSHub 截断影响）
+    auth_token = os.getenv("TWITTER_AUTH_TOKEN")
+    ct0 = os.getenv("TWITTER_CT0")
 
-    if not rsshub_url:
-        print("[ERROR] RSSHUB_URL 未配置")
-        return
     if not deepseek_key:
         print("[ERROR] DEEPSEEK_API_KEY 未配置")
         return
 
-    # 1. 拉取 RSS
+    # 1. 拉取 RSS（优先 twitter_client，缺失 cookie 才 fallback RSSHub）
     print(f"[1/4] 拉取 @{username} 的最近推文...")
     try:
-        tweets = fetch_tweets(rsshub_url, username)
+        if auth_token and ct0:
+            print("  使用 X GraphQL 直接拉取（含回复）")
+            tweets = fetch_from_twitter(auth_token, ct0, username)
+        else:
+            if not rsshub_url:
+                print("[ERROR] 未配 TWITTER_AUTH_TOKEN/CT0 且 RSSHUB_URL 未配置")
+                return
+            print("  [WARN] 未配 X cookie，fallback 到 RSSHub（已知会漏掉部分推文）")
+            tweets = fetch_from_rsshub(rsshub_url, username)
     except Exception as e:
         print(f"[ERROR] 拉取失败: {e}")
         return
