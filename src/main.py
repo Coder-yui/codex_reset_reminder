@@ -2,6 +2,7 @@
 
 import os
 import sys
+import traceback
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -96,4 +97,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        print("[ERROR] 运行失败，完整 traceback 如下：", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)

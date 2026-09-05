@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+import time
 from email.utils import format_datetime
 from pathlib import Path
 from typing import Dict, List
@@ -51,6 +52,26 @@ def fetch_tweets(
     username: str,
     user_id: str,
     limit: int = 40,
+    max_retries: int = 3,
 ) -> List[Dict]:
-    """同步入口：只调用 UserTweetsAndReplies 这一种 X 时间线。"""
-    return asyncio.run(_fetch(auth_token, ct0, username, user_id, limit))
+    """同步入口：只调用 UserTweetsAndReplies 这一种 X 时间线。
+
+    X 的接口偶发抖动，失败时按指数退避重试几次，避免单次网络波动导致整个 workflow 标红。
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return asyncio.run(_fetch(auth_token, ct0, username, user_id, limit))
+        except Exception as exc:
+            last_exc = exc
+            print(
+                f"[twscrape] 第 {attempt}/{max_retries} 次抓取失败: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+    # 全部重试耗尽，抛出最后一次异常
+    raise RuntimeError(
+        f"抓取 @{username} 时间线连续失败 {max_retries} 次，最后错误: "
+        f"{type(last_exc).__name__}: {last_exc}"
+    ) from last_exc
