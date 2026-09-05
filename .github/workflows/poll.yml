@@ -1,15 +1,8 @@
 name: Poll Tibo Reset
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'src/sent_tweets.json'
-  schedule:
-    # 每 5 分钟跑一次（GitHub Actions cron 最小粒度就是 5 分钟）
-    # 注意：GitHub 对公共仓 schedule 比较准时，私有仓可能有延迟
-    - cron: '*/5 * * * *'
-  workflow_dispatch:  # 支持手动触发，方便初次测试
+  # 暂停自动运行；找到合适服务器后恢复 push/schedule 触发即可。
+  workflow_dispatch:  # 保留手动入口，便于迁移完成后验证
 
 permissions:
   contents: write  # 用于回写 src/sent_tweets.json
