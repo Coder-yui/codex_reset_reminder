@@ -1,6 +1,6 @@
 # Codex Reset Reminder
 
-每 5 分钟读取 Tibo（[@thsottiaux](https://x.com/thsottiaux)）的 X 时间线。新帖子正文包含 `reset` 时，推送到飞书和微信。
+每 5 分钟读取 Tibo（[@thsottiaux](https://x.com/thsottiaux)）的 X 时间线，每次最多抓取 5 条。新帖子正文包含 `reset` 时，推送到飞书和微信。
 
 ## 流程
 

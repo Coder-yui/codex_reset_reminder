@@ -10,6 +10,9 @@ from typing import Dict, List
 from twscrape import API, gather
 
 
+DEFAULT_FETCH_LIMIT = 5
+
+
 async def _fetch(
     auth_token: str,
     ct0: str,
@@ -21,7 +24,13 @@ async def _fetch(
         api = API(str(Path(temp_dir) / "accounts.db"), raise_when_no_account=True)
         cookies = f"auth_token={auth_token}; ct0={ct0}"
         await api.pool.add_account_cookies("monitor", cookies)
-        results = await gather(api.user_tweets_and_replies(int(user_id), limit=limit))
+        results = await gather(
+            api.user_tweets_and_replies(
+                int(user_id),
+                limit=limit,
+                kv={"count": limit},
+            )
+        )
 
     tweets: List[Dict] = []
     expected = username.lower()
@@ -51,11 +60,12 @@ def fetch_tweets(
     ct0: str,
     username: str,
     user_id: str,
-    limit: int = 40,
+    limit: int = DEFAULT_FETCH_LIMIT,
     max_retries: int = 3,
 ) -> List[Dict]:
     """同步入口：只调用 UserTweetsAndReplies 这一种 X 时间线。
 
+    每次最多抓取 5 条，并将单次 GraphQL 请求的 count 同样限制为 5，降低被 X 拒绝的概率。
     X 的接口偶发抖动，失败时按指数退避重试几次，避免单次网络波动导致整个 workflow 标红。
     """
     last_exc: Exception | None = None

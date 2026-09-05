@@ -27,7 +27,7 @@ class TwscrapeClientTests(unittest.TestCase):
 
         self.assertEqual(tweets[0]["status_id"], "2086188036493344823")
         async_fetch.assert_awaited_once_with(
-            "token", "csrf", "thsottiaux", "1953337039510003712", 40
+            "token", "csrf", "thsottiaux", "1953337039510003712", 5
         )
 
 
